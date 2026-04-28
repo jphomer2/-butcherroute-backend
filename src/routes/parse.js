@@ -3,7 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { supabase } from '../lib/supabase.js';
 
 const router = Router();
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY?.trim() });
 
 const SYSTEM_PROMPT = `You are a dispatch assistant for a UK meat wholesale depot (James Burden Ltd).
 Your job is to parse WhatsApp order messages and extract structured delivery stops.
