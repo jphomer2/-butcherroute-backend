@@ -3,7 +3,6 @@ import Anthropic from '@anthropic-ai/sdk';
 import { supabase } from '../lib/supabase.js';
 
 const router = Router();
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY?.trim() });
 
 const SYSTEM_PROMPT = `You are a dispatch assistant for a UK meat wholesale depot (James Burden Ltd).
 Your job is to parse WhatsApp order messages and extract structured delivery stops.
@@ -61,6 +60,10 @@ router.post('/message', async (req, res) => {
   if (!message) return res.status(400).json({ error: 'message is required' });
 
   const date = delivery_date || new Date().toISOString().split('T')[0];
+
+  const key = process.env.ANTHROPIC_API_KEY?.trim();
+  if (!key) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not set on server' });
+  const anthropic = new Anthropic({ apiKey: key });
 
   try {
     // 1. Save raw message to whatsapp_messages
@@ -137,8 +140,8 @@ router.post('/message', async (req, res) => {
       input_tokens: response.usage.input_tokens,
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    console.error('Parse error:', err.status, err.name, err.message);
+    res.status(500).json({ error: err.message, type: err.name, status: err.status });
   }
 });
 
