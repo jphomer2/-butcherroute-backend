@@ -80,6 +80,16 @@ router.patch('/stops/:stopId', async (req, res) => {
   res.json(data);
 });
 
+// DELETE /api/runs/stops/:stopId — remove a stop
+router.delete('/stops/:stopId', async (req, res) => {
+  const { error } = await supabase
+    .from('delivery_stops')
+    .delete()
+    .eq('id', req.params.stopId);
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(204).end();
+});
+
 // GET /api/runs/:id/stops — stops for a run
 router.get('/:id/stops', async (req, res) => {
   const { data: run } = await supabase.from('runs').select('delivery_date').eq('id', req.params.id).single();
