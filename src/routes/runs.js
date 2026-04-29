@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import twilio from 'twilio';
 import { supabase } from '../lib/supabase.js';
 
 const router = Router();
@@ -77,6 +78,62 @@ router.patch('/:id', async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
+});
+
+// POST /api/runs/:id/dispatch — send route to driver via SMS
+router.post('/:id/dispatch', async (req, res) => {
+  const { data: run, error: runErr } = await supabase
+    .from('runs')
+    .select('*, driver(name, whatsapp_number, van_plate)')
+    .eq('id', req.params.id)
+    .single();
+
+  if (runErr || !run) return res.status(404).json({ error: 'Run not found' });
+  if (!run.route_url) return res.status(400).json({ error: 'Run has no route URL — optimise first' });
+
+  const { data: stops } = await supabase
+    .from('delivery_stops')
+    .select('customer_name_raw, quantity, unit, early, early_time, tbc')
+    .eq('delivery_date', run.delivery_date)
+    .order('route_sequence');
+
+  const driver = run.driver;
+  if (!driver?.whatsapp_number) return res.status(400).json({ error: 'No driver assigned to this run' });
+
+  const dateLabel = new Date(run.delivery_date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  const earlyStops = (stops || []).filter(s => s.early);
+  const miles = run.total_miles ? `${run.total_miles} miles` : '';
+  const mins = run.est_drive_minutes ? `~${run.est_drive_minutes} mins drive` : '';
+
+  let msg = `ButcherRoute — ${dateLabel}\n`;
+  msg += `${(stops || []).length} stops`;
+  if (miles) msg += ` · ${miles}`;
+  if (mins) msg += ` · ${mins}`;
+  msg += `\n\n`;
+
+  if (earlyStops.length) {
+    msg += `⚡ EARLY COLLECTIONS:\n`;
+    earlyStops.forEach(s => { msg += `  ${s.customer_name_raw}${s.early_time ? ` @ ${s.early_time}` : ''}\n`; });
+    msg += `\n`;
+  }
+
+  msg += `Route:\n${run.route_url}`;
+
+  try {
+    const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+    await client.messages.create({
+      body: msg,
+      from: process.env.TWILIO_FROM_NUMBER,
+      to: driver.whatsapp_number,
+    });
+
+    await supabase.from('runs').update({ status: 'dispatched', dispatched_at: new Date().toISOString() }).eq('id', run.id);
+
+    res.json({ ok: true, sent_to: driver.whatsapp_number, driver: driver.name });
+  } catch (err) {
+    console.error('Twilio error:', err.message);
+    res.status(500).json({ error: `Failed to send message: ${err.message}` });
+  }
 });
 
 // PATCH /api/runs/stops/:stopId — update a single stop
