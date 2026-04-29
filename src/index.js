@@ -29,6 +29,17 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+app.get('/api/health/supabase', async (_req, res) => {
+  const { supabase } = await import('./lib/supabase.js');
+  try {
+    const { error } = await supabase.from('customers').select('id').limit(1);
+    if (error) return res.status(500).json({ ok: false, error: error.message, hint: error.hint });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.get('/api/health/anthropic', async (_req, res) => {
   const key = process.env.ANTHROPIC_API_KEY?.trim();
   if (!key) return res.status(500).json({ ok: false, error: 'ANTHROPIC_API_KEY not set' });
