@@ -19,6 +19,18 @@ router.get('/', async (req, res) => {
   res.json(data);
 });
 
+// DELETE /api/runs?date=YYYY-MM-DD — clear everything for a date (no run ID needed)
+router.delete('/', async (req, res) => {
+  const { date } = req.query;
+  if (!date) return res.status(400).json({ error: 'date query param required' });
+
+  await supabase.from('delivery_stops').delete().eq('delivery_date', date);
+  await supabase.from('whatsapp_messages').delete().eq('delivery_date', date);
+  await supabase.from('runs').delete().eq('delivery_date', date);
+
+  res.status(204).end();
+});
+
 // GET /api/runs/:id — run with all stops
 router.get('/:id', async (req, res) => {
   const { data: run, error: runErr } = await supabase
