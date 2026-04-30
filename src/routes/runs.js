@@ -90,6 +90,23 @@ router.delete('/stops/:stopId', async (req, res) => {
   res.status(204).end();
 });
 
+// DELETE /api/runs/:id/stops — clear all stops for a run and reset to building
+router.delete('/:id/stops', async (req, res) => {
+  const { error: delErr } = await supabase
+    .from('delivery_stops')
+    .delete()
+    .eq('run_id', req.params.id);
+
+  if (delErr) return res.status(500).json({ error: delErr.message });
+
+  await supabase
+    .from('runs')
+    .update({ status: 'building', total_miles: null, est_drive_minutes: null, route_url: null, updated_at: new Date().toISOString() })
+    .eq('id', req.params.id);
+
+  res.status(204).end();
+});
+
 // GET /api/runs/:id/stops — stops for a run
 router.get('/:id/stops', async (req, res) => {
   const { data: run } = await supabase.from('runs').select('id').eq('id', req.params.id).single();
