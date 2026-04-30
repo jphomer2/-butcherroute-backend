@@ -56,7 +56,7 @@ function matchCustomer(rawName, customers) {
 // POST /api/parse/message
 // Body: { message: string, delivery_date?: string, run_id?: string }
 router.post('/message', async (req, res) => {
-  const { message, delivery_date, run_id } = req.body;
+  const { message, delivery_date } = req.body;
   if (!message) return res.status(400).json({ error: 'message is required' });
 
   const date = delivery_date || new Date().toISOString().split('T')[0];
@@ -98,15 +98,25 @@ router.post('/message', async (req, res) => {
       .select('id, name, name_aliases, postcode, lat, lng, delivery_notes')
       .eq('active', true);
 
-    // 4. Load existing stops for this date to avoid duplicates
-    const { data: existingStops } = await supabase
-      .from('delivery_stops')
-      .select('customer_name_raw')
-      .eq('delivery_date', date);
+    // 4. Check for an active run — only deduplicate stops when a run already exists.
+    //    Without this check, orphaned stops from a deleted run would silently block new parses.
+    const { data: activeRun } = await supabase
+      .from('runs')
+      .select('id')
+      .eq('delivery_date', date)
+      .maybeSingle();
 
-    const existingNames = new Set(
-      (existingStops || []).map(s => normalise(s.customer_name_raw))
-    );
+    let existingNames = new Set();
+    let existingStopCount = 0;
+
+    if (activeRun) {
+      const { data: existingStops } = await supabase
+        .from('delivery_stops')
+        .select('customer_name_raw')
+        .eq('delivery_date', date);
+      existingNames = new Set((existingStops || []).map(s => normalise(s.customer_name_raw)));
+      existingStopCount = existingStops?.length || 0;
+    }
 
     // 5. Build delivery_stops rows, skipping already-present customers
     const stops = parsed.stops
@@ -126,13 +136,20 @@ router.post('/message', async (req, res) => {
           notes: stop.notes || customer?.delivery_notes || null,
           matched: !!customer,
           match_confidence: confidence,
-          route_sequence: (existingStops?.length || 0) + idx + 1,
+          route_sequence: existingStopCount + idx + 1,
         };
       });
 
     if (!stops.length) {
       await supabase.from('whatsapp_messages').update({ status: 'parsed' }).eq('id', msgRow.id);
-      return res.json({ message_id: msgRow.id, stops: [], unmatched: [], input_tokens: 0, skipped: 'all stops already exist for this date' });
+      return res.json({
+        message_id: msgRow.id,
+        run_id: activeRun?.id || null,
+        stops: [],
+        unmatched: [],
+        input_tokens: 0,
+        skipped: 'all stops already exist for this date',
+      });
     }
 
     const { data: insertedStops, error: stopsErr } = await supabase
@@ -142,16 +159,23 @@ router.post('/message', async (req, res) => {
 
     if (stopsErr) return res.status(500).json({ error: stopsErr.message });
 
-    // 5. Mark message as parsed
+    // 6. Mark message as parsed
     await supabase.from('whatsapp_messages').update({ status: 'parsed' }).eq('id', msgRow.id);
 
-    // 6. If a run_id was provided, update run counters
-    if (run_id) {
-      await supabase.rpc('refresh_run_counts', { p_run_id: run_id }).maybeSingle();
+    // 7. Ensure a run exists for this date (create if none), then return its id
+    let runId = activeRun?.id || null;
+    if (!runId) {
+      const { data: newRun } = await supabase
+        .from('runs')
+        .insert({ delivery_date: date, status: 'building' })
+        .select('id')
+        .single();
+      runId = newRun?.id || null;
     }
 
     res.json({
       message_id: msgRow.id,
+      run_id: runId,
       stops: insertedStops,
       unmatched: insertedStops.filter(s => !s.matched).map(s => s.customer_name_raw),
       input_tokens: response.usage.input_tokens,
