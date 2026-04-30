@@ -67,6 +67,19 @@ router.post('/', async (req, res) => {
   res.status(201).json(data);
 });
 
+// DELETE /api/runs/:id/stops — clear stops for a run, keep the run record
+router.delete('/:id/stops', async (req, res) => {
+  const { data: run } = await supabase.from('runs').select('delivery_date').eq('id', req.params.id).single();
+  if (!run) return res.status(404).json({ error: 'Run not found' });
+
+  await supabase.from('delivery_stops').delete().eq('delivery_date', run.delivery_date);
+  await supabase.from('runs').update({
+    status: 'building', route_url: null, total_miles: null, est_drive_minutes: null,
+  }).eq('id', req.params.id);
+
+  res.status(204).end();
+});
+
 // DELETE /api/runs/:id — delete a run and all its stops
 router.delete('/:id', async (req, res) => {
   const { data: run } = await supabase.from('runs').select('delivery_date').eq('id', req.params.id).single();
