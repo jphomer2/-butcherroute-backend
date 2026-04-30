@@ -31,7 +31,7 @@ router.get('/:id', async (req, res) => {
   const { data: stops, error: stopsErr } = await supabase
     .from('delivery_stops')
     .select('*, customers(name, address, postcode, lat, lng, delivery_notes)')
-    .eq('delivery_date', run.delivery_date)
+    .eq('run_id', req.params.id)
     .order('route_sequence');
 
   if (stopsErr) return res.status(500).json({ error: stopsErr.message });
@@ -92,13 +92,13 @@ router.delete('/stops/:stopId', async (req, res) => {
 
 // GET /api/runs/:id/stops — stops for a run
 router.get('/:id/stops', async (req, res) => {
-  const { data: run } = await supabase.from('runs').select('delivery_date').eq('id', req.params.id).single();
+  const { data: run } = await supabase.from('runs').select('id').eq('id', req.params.id).single();
   if (!run) return res.status(404).json({ error: 'Run not found' });
 
   const { data, error } = await supabase
     .from('delivery_stops')
     .select('*, customers(name, address, postcode, lat, lng)')
-    .eq('delivery_date', run.delivery_date)
+    .eq('run_id', req.params.id)
     .order('route_sequence');
 
   if (error) return res.status(500).json({ error: error.message });

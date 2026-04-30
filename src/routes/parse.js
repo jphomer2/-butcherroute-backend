@@ -103,6 +103,7 @@ router.post('/message', async (req, res) => {
       const { customer, confidence } = matchCustomer(stop.customer_name_raw, customers);
       return {
         message_id: msgRow.id,
+        run_id: run_id || null,
         customer_id: customer?.id || null,
         delivery_date: date,
         customer_name_raw: stop.customer_name_raw,

@@ -9,17 +9,17 @@ const DEPOT = {
 };
 
 // POST /api/optimise
-// Body: { delivery_date: 'YYYY-MM-DD' }
+// Body: { run_id: string }
 // Calls Google Maps Routes API to get optimised stop order, updates route_sequence in DB
 router.post('/', async (req, res) => {
-  const { delivery_date } = req.body;
-  if (!delivery_date) return res.status(400).json({ error: 'delivery_date required' });
+  const { run_id } = req.body;
+  if (!run_id) return res.status(400).json({ error: 'run_id required' });
 
   // 1. Load stops with customer coords
   const { data: stops, error } = await supabase
     .from('delivery_stops')
     .select('id, customer_name_raw, tbc, customers(name, lat, lng)')
-    .eq('delivery_date', delivery_date)
+    .eq('run_id', run_id)
     .eq('tbc', false);
 
   if (error) return res.status(500).json({ error: error.message });
@@ -105,7 +105,7 @@ router.post('/', async (req, res) => {
       route_url: mapsUrl,
       updated_at: new Date().toISOString(),
     })
-    .eq('delivery_date', delivery_date);
+    .eq('id', run_id);
 
   res.json({
     stops_optimised: geocoded.length,
